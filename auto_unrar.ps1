@@ -9,6 +9,48 @@ function Get-ProcessFile(){
     } 
     return $pFileContents
 }
+
+
+function Get-ValueByKey($key, $list){
+    
+    $keyPortion = "$key = "
+    $line = $list | ? { $_.StartsWith($keyPortion) }
+
+    if ( -not [string]::IsNullOrWhiteSpace($line) ){
+        $raw_val = $line.Substring($keyPortion.Length).Trim()
+
+        # 7z shows booleans as "-" and "+". This check will
+        # replace it with powershell bools.
+        if ( $raw_val.Length -eq 1 -and @("+", "-") -contains $raw_val )
+        {
+            return $raw_val -eq "+"
+        }
+
+        return $raw_val
+    }
+    return $null
+}
+
+
+function Get-RarInfo($rarFilePath){
+    [array] $cmdOutput = &$7z_cmd t $rarFilePath '__no_files__'
+    $finfo = @{
+        "atype" = (Get-ValueByKey -list $cmdOutput -key "Path");
+        "physicalSize" = (Get-ValueByKey -list $cmdOutput -key "Physical Size");
+        "characteristics" = @((Get-ValueByKey -list $cmdOutput -key "Characteristics") -split " ");
+        "solid" = (Get-ValueByKey -list $cmdOutput -key "Solid");
+        "blocks" = (Get-ValueByKey -list $cmdOutput -key "Blocks");
+        "multivolume" = (Get-ValueByKey -list $cmdOutput -key "Multivolume");
+        "volumeIndex" = (Get-ValueByKey -list $cmdOutput -key "Volume Index");
+        "volumeCount" = (Get-ValueByKey -list $cmdOutput -key "Volumes");
+        'path' = (Get-ValueByKey -list $cmdOutput -key "Path");
+        "raw_output" = $cmdOutput
+    }
+
+    return $finfo
+
+}
+
 $dirToUnrar = $args[0]
 
 if ( [String]::IsNullOrWhiteSpace( $dirToUnrar) ){
@@ -45,8 +87,20 @@ foreach ($rarfile in $rar_files) {
         Write-Host "Skipping $($rarfile.Name) as it's already marked extracted."
         continue
     }
-    Write-Host "extracting ${$rarfile.FullName}"
 
+    # Check if this is a multivolume archive that's incorrectly named *.rar instead of *.r0x
+    $archiveInfo = Get-RarInfo $rarfile.FullName
+    
+    if ( $archiveInfo["multivolume"] -and ($archiveInfo["volumeIndex"] -gt 0 -or $archiveInfo["characteristics"] -notcontains "FirstVolume")  ){
+        #We'll call this one "processed" even though it's more like... "Banned".
+        Write-Host "Skipping $($rarfile.Name) as it's a piece of a larger volume."
+        $already_processed += $rarfile.Name
+        $already_processed | Out-File $CACHE_FILE
+        continue
+    }
+
+
+    Write-Host "extracting ${$rarfile.FullName}"
     mkdir -f "$tempDir\$($rarfile.Directory.Name)"
 
     &$7z_cmd x $rarfile.FullName -t* -y -spe -o"$tempDir\$($rarfile.Directory.Name)"
