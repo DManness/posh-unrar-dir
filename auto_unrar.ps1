@@ -12,13 +12,21 @@ function Get-ProcessFile(){
 $dirToUnrar = $args[0]
 
 if ( [String]::IsNullOrWhiteSpace( $dirToUnrar) ){
- $dirToUnrar = Read-Host -Prompt "Enter the path you want to scan"
+ $dirToUnrar = (Read-Host -Prompt "Enter the path you want to scan").Trim("""").Trim('''')
 }
 
 
 
 $already_processed = @(Get-ProcessFile)
-$rar_files = ls $dirToUnrar  -Depth 3 | ? {$_.Extension -ieq '.rar'}
+$rar_files = $null
+
+#PS5 allows you to set a recursion depth. Earlier versions don't have a limit option. this means means the script will run slower or possible get stuck in a loop if running older versions of PoSh
+if ($PSVersionTable.PSVersion.Major -ge 5){
+    $rar_files = ls $dirToUnrar -Depth 5 | ? {$_.Extension -ieq '.rar'}
+} else {
+    $rar_files = ls $dirToUnrar -Recurse | ? {$_.Extension -ieq '.rar'}
+}
+    
 
 foreach ($rarfile in $rar_files) {
     if ($already_processed -contains $rarfile.Name){
