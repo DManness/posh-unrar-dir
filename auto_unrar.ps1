@@ -51,6 +51,26 @@ function Get-RarInfo($rarFilePath){
 
 }
 
+
+function Get-TimestampFile(){
+    $tsFilePath = "$PSScriptRoot\lastrun.dat"
+    $dateTimeValue = new-object DateTime(1970,1,1,0,0,0,0)
+    if (Test-Path $tsFilePath){
+        $dateTimeValue.AddMilliseconds( [long]( Get-Content $tsFilePath) )
+    } else{
+        [datetime]$dateTimeValue
+    }
+}
+
+function Out-TimestampFile(){
+    $tsFilePath = "$PSScriptRoot\lastrun.dat"
+    [long]([Double](Get-Date -UFormat "%s") * 1000) | Out-File $tsFilePath
+}
+
+
+
+
+# Process command line arguments
 $dirToUnrar = $args[0]
 
 if ( [String]::IsNullOrWhiteSpace( $dirToUnrar) ){
@@ -71,14 +91,25 @@ if ( (Test-Path $tempDir) -ne $true) {
     exit 1
 }
 
+
+
+# Grab the timestamp whence the script last ran
+$lastRun = Get-TimestampFile
+
+# Overwrite the timestamp (for the next run)
+Out-TimestampFile
+
+
 $already_processed = @(Get-ProcessFile)
 $rar_files = $null
 
+
+
 #PS5 allows you to set a recursion depth. Earlier versions don't have a limit option. this means means the script will run slower or possible get stuck in a loop if running older versions of PoSh
 if ($PSVersionTable.PSVersion.Major -ge 5){
-    $rar_files = ls $dirToUnrar -Depth 5 | ? {$_.Extension -ieq '.rar'}
+    $rar_files = ls $dirToUnrar -Depth 5 | ? {$_.Extension -ieq '.rar' -and $_.LastWriteTime -ge $lastRun}
 } else {
-    $rar_files = ls $dirToUnrar -Recurse | ? {$_.Extension -ieq '.rar'}
+    $rar_files = ls $dirToUnrar -Recurse | ? {$_.Extension -ieq '.rar' -and $_.LastWriteTime -ge $lastRun}
 }
     
 
